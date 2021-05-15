@@ -36,7 +36,7 @@ func (ctx *Context) Response() *Response {
 	return ctx.resp
 }
 
-// Document returns HTTP document
+// Document returns HTML document
 func (ctx *Context) Document() *goquery.Document {
 	if ctx.resp == nil {
 		return nil

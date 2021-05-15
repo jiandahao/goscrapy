@@ -16,7 +16,7 @@ const (
 )
 
 // Engine represents scraping engine, it is responsible for managing
-// the data flow among schedule, downloader and spider.
+// the data flow among scheduler, downloader and spiders.
 type Engine struct {
 	sched       Scheduler
 	downloader  Downloader
