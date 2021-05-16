@@ -21,6 +21,7 @@ type Engine struct {
 	sched       Scheduler
 	downloader  Downloader
 	spiders     []Spider
+	pipelines   map[string][]Pipeline
 	concurrency int
 	lg          logger.Logger
 	mux         sync.RWMutex
@@ -40,6 +41,7 @@ func NewEngine() *Engine {
 		downloader:  downloader,
 		concurrency: 1,
 		lg:          logger.NewSugaredLogger("engine", "info"),
+		pipelines:   make(map[string][]Pipeline),
 	}
 }
 
@@ -74,7 +76,19 @@ func (e *Engine) RegisterSipders(spiders ...Spider) {
 }
 
 // RegisterPipelines register pipelines
-func (e *Engine) RegisterPipelines() {}
+func (e *Engine) RegisterPipelines(pipelines ...Pipeline) {
+	for _, p := range pipelines {
+		// remove duplicated item name
+		tmp := map[string]struct{}{}
+		for _, item := range p.ItemList() {
+			if _, ok := tmp[item]; ok {
+				continue
+			}
+			e.pipelines[item] = append(e.pipelines[item], p)
+			tmp[item] = struct{}{}
+		}
+	}
+}
 
 // Start starts engine
 func (e *Engine) Start() {
@@ -141,12 +155,15 @@ func (e *Engine) requestHandler() {
 			continue
 		}
 
+		// TODO: engine send request to downloader, passing through relative middleware
 		resp, err := e.downloader.Download(req)
 		if err != nil {
 			e.lg.Errorf("<%s %s>  %v", req.Method, req.URL, err)
 			continue
 		}
 		e.lg.Infof("<%s %s %s>", req.Method, req.URL, resp.Status)
+		// TODO: once downloader finishes downloading, the downloader generates a response and send it to
+		// engine, passing through relative middleware
 
 		resp.request = req // set relative request
 
@@ -230,15 +247,47 @@ func (e *Engine) handleResponse(spider Spider, resp *Response) {
 		resp: resp,
 	}
 
-	_, newReqs, err := spider.Parse(ctx)
+	items, newReqs, err := spider.Parse(ctx)
 	if err != nil {
 		e.lg.Errorf("spider [%s] failed to parse result, %v", spider.Name(), err)
 		return
 	}
+
+	// passing items to all associated pipelines
+	e.handleItems(items)
+
 	// TODO:
 	// 1 - calculate request depth
 	// 2 - FIX IT: create a new goroutine everytime here, may cause too many blocked goroutine
 	go e.addRequests(newReqs)
+}
+
+func (e *Engine) handleItems(items *Items) {
+	if items == nil || items.Name() == "" {
+		return
+	}
+
+	pipelines, ok := e.pipelines[items.Name()]
+	if !ok {
+		e.lg.Warnf("no pipeline associate with items: %s", items.Name())
+		return
+	}
+
+	var wg waitgroup.Wrapper
+	for _, p := range pipelines {
+		if p == nil {
+			continue
+		}
+
+		wg.Wrap(func() {
+			err := p.Handle(items)
+			if err != nil {
+				e.lg.Errorf("pipeline [%s] error: %s", p.Name(), err)
+			}
+		})
+	}
+
+	wg.Wait()
 }
 
 // Stop stops engine

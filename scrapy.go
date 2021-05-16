@@ -65,10 +65,18 @@ type Items struct {
 // NewItems new items with specifed name, goscrapy pipeline will
 // make it's decision whether to handle a items based on item's name.
 func NewItems(name string) *Items {
+	if name == "" {
+		panic("invalid item name")
+	}
 	return &Items{
 		Map:  sync.Map{},
 		name: name,
 	}
+}
+
+// Name returns items' name
+func (item *Items) Name() string {
+	return item.name
 }
 
 // Spider is an interface which defines how a certain site (or a group of sites) will be scraped,
@@ -88,6 +96,7 @@ type Spider interface {
 
 // Pipeline pipeline
 type Pipeline interface {
+	Name() string       // returns pipeline's name
 	ItemList() []string // returns all items' name that this pipeline shoud handle
-	Handle(ctx *Context, items *Items) error
+	Handle(items *Items) error
 }

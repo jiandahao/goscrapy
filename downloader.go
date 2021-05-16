@@ -16,7 +16,8 @@ type DownloadOption struct {
 }
 
 // Downloader is an interface that representing the ability to download
-// data from internet.
+// data from internet. It is responsible for fetching web pages, the downloading
+// response will be took over by engine, in turn, fed to spiders.
 type Downloader interface {
 	Init(option DownloadOption)
 	Download(*Request) (*Response, error)
