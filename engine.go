@@ -155,17 +155,12 @@ func (e *Engine) requestHandler() {
 			continue
 		}
 
-		// TODO: engine send request to downloader, passing through relative middleware
 		resp, err := e.downloader.Download(req)
 		if err != nil {
 			e.lg.Errorf("<%s %s>  %v", req.Method, req.URL, err)
 			continue
 		}
 		e.lg.Infof("<%s %s %s>", req.Method, req.URL, resp.Status)
-		// TODO: once downloader finishes downloading, the downloader generates a response and send it to
-		// engine, passing through relative middleware
-
-		resp.request = req // set relative request
 
 		wg := waitgroup.Wrapper{}
 		for index := range spiders {

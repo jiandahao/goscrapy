@@ -32,7 +32,7 @@ type DefaultDownloader struct {
 // Init init default downloader
 func (dd *DefaultDownloader) Init(opt DownloadOption) {
 	dd.opt = opt
-	dd.httpClient = http.DefaultClient
+	dd.httpClient = &http.Client{}
 }
 
 // Download sends http request and using goquery to get
@@ -46,25 +46,30 @@ func (dd *DefaultDownloader) Download(req *Request) (*Response, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 
-	body := resp.Body
-	defer body.Close()
+	buf := &bytes.Buffer{}
+	if resp.ContentLength >= 0 {
+		data := make([]byte, 0, resp.ContentLength+512)
+		buf = bytes.NewBuffer(data)
+	}
 
-	// TODO: DON'T use ioutil.ReadAll.
-	data, err := ioutil.ReadAll(body)
+	_, err = buf.ReadFrom(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	resp.Body = ioutil.NopCloser(bytes.NewBuffer(data))
-	doc, err := goquery.NewDocumentFromReader(bytes.NewBuffer(data))
-	if err != nil {
-		return nil, err
-	}
+	body := ioutil.NopCloser(buf)
+	doc, _ := goquery.NewDocumentFromReader(bytes.NewBuffer(buf.Bytes()))
 
 	return &Response{
-		Response: resp,
-		Document: doc,
+		Status:        resp.Status,
+		StatusCode:    resp.StatusCode,
+		ContentLength: resp.ContentLength,
+		Request:       req,
+		Document:      doc,
+		Body:          body,
+		Header:        resp.Header,
 	}, nil
 }
 
