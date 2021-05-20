@@ -141,14 +141,6 @@ func (e *Engine) requestHandler() {
 			return
 		}
 
-		if req == nil {
-			continue
-		}
-
-		if req.Method == "" {
-			req.Method = http.MethodGet
-		}
-
 		spiders := e.getRelativeSpider(req.URL)
 		if len(spiders) <= 0 {
 			e.lg.Warnf("no spider found to handle request: %s", req.URL)
@@ -192,10 +184,24 @@ func (e *Engine) getRelativeSpider(url string) []Spider {
 
 // get next request from scheduler.
 func (e *Engine) getNextRequest() (*Request, bool) {
+	var req *Request
+	var hasMore bool
 	atomic.AddInt32(&e.pendingCnt, 1)
-	req, ok := e.sched.NextRequest()
+
+	for req == nil {
+		req, hasMore = e.sched.NextRequest()
+		if !hasMore {
+			return nil, false
+		}
+	}
+
+	if req.Method == "" {
+		req.Method = http.MethodGet
+	}
+
 	atomic.AddInt32(&e.pendingCnt, -1)
-	return req, ok
+
+	return req, true
 }
 
 func (e *Engine) addRequests(reqs []*Request) {
