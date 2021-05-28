@@ -27,6 +27,9 @@ type Engine struct {
 	mux         sync.RWMutex
 	state       int
 	pendingCnt  int32 // pendingCnt represents how many workers are waiting to handle request
+
+	requestHandlers  []RequestHandleFunc
+	responseHandlers []ResponseHandleFunc
 }
 
 // NewEngine create a new goscrapy engine
@@ -58,6 +61,31 @@ func (e *Engine) UseDownloader(down Downloader) {
 // UseLogger sets logger
 func (e *Engine) UseLogger(lg logger.Logger) {
 	e.lg = lg
+}
+
+// UseRequestMiddlewares registers request middlewares. Requests will be processed
+// by request middlewares just before passing to downloader.
+//
+// for aborting request in middleware, using Request.Abrot()
+/* for example:
+func ReqMiddleware(req *goscrapy.Request) error {
+	if req.URL == "http://www.example.com" {
+		req.Abort()
+		return nil
+	}
+
+	return nil
+}
+*/
+func (e *Engine) UseRequestMiddlewares(middleware ...RequestHandleFunc) {
+	e.requestHandlers = append(e.requestHandlers, middleware...)
+}
+
+// UseResponseMideelewares registers response middlewares. Response will be processed by
+// response middlewares right after downloader finishes downloading and takes over
+// response to engine
+func (e *Engine) UseResponseMideelewares(middleware ...ResponseHandleFunc) {
+	e.responseHandlers = append(e.responseHandlers, middleware...)
 }
 
 // RegisterSipders add working spiders
@@ -147,22 +175,19 @@ func (e *Engine) requestHandler() {
 			continue
 		}
 
-		resp, err := e.downloader.Download(req)
+		resp, err := e.handleRequest(req)
 		if err != nil {
 			e.lg.Errorf("<%s %s>  %v", req.Method, req.URL, err)
 			continue
 		}
-		e.lg.Infof("<%s %s %s>", req.Method, req.URL, resp.Status)
 
-		wg := waitgroup.Wrapper{}
-		for index := range spiders {
-			spider := spiders[index]
-			wg.RecoverableWrap(func() {
-				e.handleResponse(spider, resp)
-			})
+		if resp == nil {
+			continue
 		}
 
-		wg.Wait()
+		e.lg.Infof("<%s %s %s>", req.Method, req.URL, resp.Status)
+
+		e.handleResponse(spiders, resp)
 
 		time.Sleep(time.Second)
 	}
@@ -243,24 +268,56 @@ func (e *Engine) requestProbe() {
 	}
 }
 
-func (e *Engine) handleResponse(spider Spider, resp *Response) {
-	ctx := &Context{
-		resp: resp,
+func (e *Engine) handleRequest(req *Request) (*Response, error) {
+	// handle request using middlewares before passing to downloader
+	for _, fn := range e.requestHandlers {
+		err := fn(req)
+		if err != nil {
+			return nil, err
+		}
+
+		if req.IsAborted() {
+			return nil, nil
+		}
 	}
 
-	items, newReqs, err := spider.Parse(ctx)
-	if err != nil {
-		e.lg.Errorf("spider [%s] failed to parse result, %v", spider.Name(), err)
-		return
+	return e.downloader.Download(req)
+}
+
+func (e *Engine) handleResponse(spiders []Spider, resp *Response) {
+	// handle response using middleware before passing to spider
+	for _, fn := range e.responseHandlers {
+		err := fn(resp)
+		if err != nil {
+			e.lg.Errorf("handle response failure in middleware, %v", err)
+			return
+		}
 	}
 
-	// passing items to all associated pipelines
-	e.handleItems(items)
+	wg := waitgroup.Wrapper{}
+	for index := range spiders {
+		spider := spiders[index]
+		wg.RecoverableWrap(func() {
+			ctx := &Context{
+				response: resp,
+			}
 
-	// TODO:
-	// 1 - calculate request depth
-	// 2 - FIX IT: create a new goroutine everytime here, may cause too many blocked goroutine
-	go e.addRequests(newReqs)
+			items, newReqs, err := spider.Parse(ctx)
+			if err != nil {
+				e.lg.Errorf("spider [%s] failed to parse result, %v", spider.Name(), err)
+				return
+			}
+
+			// passing items to all associated pipelines
+			e.handleItems(items)
+
+			// TODO:
+			// 1 - calculate request depth
+			// 2 - FIX IT: create a new goroutine everytime here, may cause too many blocked goroutine
+			go e.addRequests(newReqs)
+		})
+	}
+	wg.Wait()
 }
 
 func (e *Engine) handleItems(items *Items) {

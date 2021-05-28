@@ -9,6 +9,9 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
+// RequestHandleFunc request handler func
+type RequestHandleFunc func(*Request) error
+
 // Request represents crawling request
 type Request struct {
 	Method       string      `json:"method,omitempty"`
@@ -17,7 +20,23 @@ type Request struct {
 	Query        url.Values  `json:"query,omitempty"`
 	currentDepth int         // current request depth
 	// TODO: add weight info，let goscrapy scheduler to sort all requests by weight
+	aborted bool
 }
+
+// Abort aborts current request, the request will not been handled anymore if it was aborted.
+// you could use it at your request middleware to make sure certain request will not be hanlded by
+// downloader and spiders.
+func (r *Request) Abort() {
+	r.aborted = true
+}
+
+// IsAborted returns true if the current context was aborted.
+func (r *Request) IsAborted() bool {
+	return r.aborted
+}
+
+// ResponseHandleFunc response handler func
+type ResponseHandleFunc func(*Response) error
 
 // Response represents crawling response
 type Response struct {
@@ -37,33 +56,25 @@ type Response struct {
 
 // Context represents the scraping and crawling context
 type Context struct {
-	resp    *Response
-	aborted bool
+	response *Response
 }
 
-// Response returns the http response
+// Response returns the downloading response
 func (ctx *Context) Response() *Response {
-	return ctx.resp
+	return ctx.response
+}
+
+// Request returns the crawling request
+func (ctx *Context) Request() *Request {
+	return ctx.response.Request
 }
 
 // Document returns HTML document
 func (ctx *Context) Document() *goquery.Document {
-	if ctx.resp == nil {
+	if ctx.response == nil {
 		return nil
 	}
 	return ctx.Response().Document
-}
-
-// Abort abort current context, the request will not been handled if current context was aborted.
-// you could use it at your request middleware to make sure certain request will not be hanlded by
-// downloader and spiders.
-func (ctx *Context) Abort() {
-	ctx.aborted = true
-}
-
-// IsAborted returns true if the current context was aborted.
-func (ctx *Context) IsAborted() bool {
-	return ctx.aborted
 }
 
 // Items items
@@ -107,6 +118,6 @@ type Spider interface {
 // Pipeline pipeline
 type Pipeline interface {
 	Name() string       // returns pipeline's name
-	ItemList() []string // returns all items' name that this pipeline shoud handle
+	ItemList() []string // returns all items' name that this pipeline cares about
 	Handle(items *Items) error
 }
