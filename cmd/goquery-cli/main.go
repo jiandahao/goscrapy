@@ -61,6 +61,7 @@ func main() {
 	eng.UseLogger(logger.NewSugaredLogger("engine", "debug"))
 
 	eng.RegisterSipders(/*add your own spiders here*/)
+	eng.RegisterPipelines(/*add your own pipelines here*/)
 
 	go eng.Start()
 
@@ -213,9 +214,3 @@ func openFile(filePath string) (*os.File, error) {
 
 	return fd, nil
 }
-
-/*
-goscrapy create project -n spider_proj
-
-goscrapy create spider -n BaiduSpider -o ./baiduspider.go -pkg spider
-*/
