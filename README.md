@@ -2,7 +2,7 @@
 
 goscrapy is a web crawling and web scraping framework written by golang. The architecture of goscrapy is similar to [python-scrpay](https://docs.scrapy.org/en/latest/topics/architecture.html), and it's described as following:
 
-![Data Flow](assets/architecture.drawio.png)
+![Data Flow](assets/arch.drawio.svg)
 
 ## Easy to use
 An example usage is avaiable at [here](example/).
