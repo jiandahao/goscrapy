@@ -11,3 +11,8 @@ goscrapy-cli create project -n newproj -o ./output_dir
 goscrapy-cli create spider -n MyFirstSpider -o ./spiders -pkg spiders
 ```
 after this, a new spider named MyFirstSpider will be created at ./spiders/myfirstspider.go
+
+### create a new pipeline
+```bash
+goscrapy-cli create pipeline -n demopipeline -o ./pipelines -pkg pipelines --item itemA --item itemB
+```

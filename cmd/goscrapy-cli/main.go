@@ -90,7 +90,9 @@ func main() {
 		CreateCommand(),
 	}
 
-	app.Run(os.Args)
+	if err := app.Run(os.Args); err != nil {
+		fmt.Println(err)
+	}
 }
 
 // CreateCommand returns command using to create project / spider code
@@ -101,6 +103,7 @@ func CreateCommand() cli.Command {
 		Subcommands: []cli.Command{
 			CreateProjectCommand(),
 			CreateSpiderCommand(),
+			CreatePipelineCommand(),
 		},
 	}
 }
@@ -192,6 +195,99 @@ func CreateSpiderCommand() cli.Command {
 			return tmpl.Execute(fd, &SpiderConfig{
 				Name:        spiderName,
 				PackageName: pkgName,
+			})
+		},
+	}
+}
+
+var pipelineTempl = `package {{.Package}}
+
+import (
+	"github.com/jiandahao/goscrapy"
+)
+
+// {{.Name}} a simple pipeline
+type {{.Name}} struct{}
+
+// Name returns pipeline's name, it's the identity of pipeline, make sure every
+// pipeline has it's own unique name
+func (p *{{.Name}}) Name() string {
+	return "simple_pipeline"
+}
+
+// ItemList declares all items that this pipeline cares about.
+func (p *{{.Name}}) ItemList() []string {
+	return []string{ {{.ItemList}} }
+}
+
+// Handle handle items
+func (p *{{.Name}}) Handle(item *goscrapy.Items) error {
+	if item == nil {
+		return nil
+	}
+	return nil
+}
+`
+
+// PipelineConfig pipeline config
+type PipelineConfig struct {
+	Name     string
+	Package  string
+	ItemList string
+}
+
+// CreatePipelineCommand create pipeline command
+func CreatePipelineCommand() cli.Command {
+	return cli.Command{
+		Name:  "pipeline",
+		Usage: "create you own pipeline to handle structure data from spiders",
+		Flags: []cli.Flag{
+			cli.StringFlag{
+				Name:  "o",
+				Usage: "specified output path",
+				Value: "./",
+			},
+			cli.StringFlag{
+				Name:  "n",
+				Usage: "specified pipeline name",
+				Value: "DefaultPipeline",
+			},
+			cli.StringFlag{
+				Name:  "pkg",
+				Usage: "package name",
+				Value: "main",
+			},
+			cli.StringSliceFlag{
+				Name:  "item",
+				Usage: "specified all items this pipeline cares about",
+			},
+		},
+		Action: func(ctx *cli.Context) error {
+			output := ctx.String("o")
+			name := ctx.String("n")
+			pkgName := ctx.String("pkg")
+			itemList := ctx.StringSlice("item")
+
+			if !strings.HasSuffix(output, ".go") {
+				output = fmt.Sprintf("%s/%s.go", strings.TrimSuffix(output, "/"), strings.ToLower(name))
+			}
+
+			fmt.Printf("creating pipeline [%s:%s] at %s", pkgName, name, output)
+			fd, err := openFile(output)
+			if err != nil {
+				return err
+			}
+			defer fd.Close()
+
+			tmpl, err := template.New("pipeline").Parse(pipelineTempl)
+			if err != nil {
+				return err
+			}
+
+			return tmpl.Execute(fd, &PipelineConfig{
+				Name:     name,
+				Package:  pkgName,
+				ItemList: "\"" + strings.Join(itemList, "\", \"") + "\"",
 			})
 		},
 	}
