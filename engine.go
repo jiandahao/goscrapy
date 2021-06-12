@@ -37,7 +37,6 @@ func NewEngine() *Engine {
 	downloader := &DefaultDownloader{}
 	downloader.Init(DownloadOption{
 		Timeout: time.Second,
-		Delay:   time.Second,
 	})
 	return &Engine{
 		sched:       NewDefaultScheduler(),

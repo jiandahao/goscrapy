@@ -2,6 +2,7 @@ package goscrapy
 
 import (
 	"bytes"
+	"context"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -11,8 +12,13 @@ import (
 
 // DownloadOption downloader options
 type DownloadOption struct {
+	// Timeout controls the entire lifetime of a request and its response:
+	// obtaining a connection, sending the request, and reading
+	// the response headers and body
 	Timeout time.Duration
-	Delay   time.Duration
+	// HTTPClient is the client that sends an HTTP request. If you wanna add
+	// proxy, implementing it in http.Transport
+	HTTPClient *http.Client
 }
 
 // Downloader is an interface that representing the ability to download
@@ -33,9 +39,17 @@ type DefaultDownloader struct {
 func (dd *DefaultDownloader) Init(opt DownloadOption) {
 	dd.opt = opt
 	dd.httpClient = &http.Client{}
+	if opt.HTTPClient != nil {
+		dd.httpClient = opt.HTTPClient
+	}
 }
 
-// Download sends http request and using goquery to get
+// SetHTTPClient set http client using to fetch pages
+func (dd *DefaultDownloader) SetHTTPClient(client *http.Client) {
+	dd.httpClient = client
+}
+
+// Download sends http request and using goquery to get http document
 func (dd *DefaultDownloader) Download(req *Request) (*Response, error) {
 	r, err := dd.makeRequest(req)
 	if err != nil {
@@ -74,7 +88,10 @@ func (dd *DefaultDownloader) Download(req *Request) (*Response, error) {
 }
 
 func (dd *DefaultDownloader) makeRequest(req *Request) (*http.Request, error) {
-	r, err := http.NewRequest(req.Method, req.URL, nil)
+	ctx, cancle := context.WithTimeout(context.Background(), dd.opt.Timeout)
+	defer cancle()
+
+	r, err := http.NewRequestWithContext(ctx, req.Method, req.URL, nil)
 	if err != nil {
 		return nil, err
 	}
