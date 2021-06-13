@@ -1,0 +1,1 @@
+To use this package you should download [chromedriver](https://chromedriver.storage.googleapis.com/index.html) firstly. More details see [ChromeDriver - WebDriver for Chrome](https://sites.google.com/a/chromium.org/chromedriver/downloads)
