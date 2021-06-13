@@ -39,7 +39,7 @@ func NewEngine() *Engine {
 		Timeout: time.Second,
 	})
 	return &Engine{
-		sched:       NewDefaultScheduler(),
+		sched:       NewFIFOScheduler(), // using a fifo scheduler by default
 		downloader:  downloader,
 		concurrency: 1,
 		lg:          logger.NewSugaredLogger("engine", "info"),
