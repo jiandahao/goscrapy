@@ -14,14 +14,18 @@ type RequestHandleFunc func(*Request) error
 
 // Request represents crawling request
 type Request struct {
-	Method       string      `json:"method,omitempty"`
-	URL          string      `json:"url,omitempty"`
-	Header       http.Header `json:"header,omitempty"`
-	Query        url.Values  `json:"query,omitempty"`
-	currentDepth int         // current request depth
-	// TODO: add weight info，let goscrapy scheduler to sort all requests by weight
-	aborted bool
-	Weight  int // using to decide scheduling sequence
+	Method string      `json:"method,omitempty"`
+	URL    string      `json:"url,omitempty"`
+	Header http.Header `json:"header,omitempty"`
+	Query  url.Values  `json:"query,omitempty"`
+	// using to decide scheduling sequence. It only means something when using a 
+	// scheduler that schedules requests based on request weight.
+	Weight int         
+
+	// private fields
+	currentDepth int  // current request depth
+	aborted      bool // true if request has been aborted
+	ctxMap       map[string]interface{}
 }
 
 // Abort aborts current request, you could use it at your request middleware
@@ -30,9 +34,33 @@ func (r *Request) Abort() {
 	r.aborted = true
 }
 
-// IsAborted returns true if the current context was aborted.
+// IsAborted returns true if the current request was aborted.
 func (r *Request) IsAborted() bool {
 	return r.aborted
+}
+
+// WithContextValue sets the value into request associated with the key.
+func (r *Request) WithContextValue(key string, value interface{}) {
+	if r.ctxMap == nil {
+		r.ctxMap = make(map[string]interface{})
+	}
+
+	r.ctxMap[key] = value
+}
+
+// ContextValue returns the value associated with this request for key,
+// or nil if no value is associated with key.
+func (r *Request) ContextValue(key string) interface{} {
+	if r.ctxMap == nil {
+		return nil
+	}
+
+	val, ok := r.ctxMap[key]
+	if !ok {
+		return nil
+	}
+
+	return val
 }
 
 // ResponseHandleFunc response handler func
