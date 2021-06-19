@@ -30,6 +30,7 @@ type Engine struct {
 
 	requestHandlers  []RequestHandleFunc
 	responseHandlers []ResponseHandleFunc
+	maxCrawlingDepth int // max crawling depth, no limit if less or equals to 0
 }
 
 // NewEngine create a new goscrapy engine
@@ -85,6 +86,12 @@ func (e *Engine) UseRequestMiddlewares(middleware ...RequestHandleFunc) {
 // response to engine
 func (e *Engine) UseResponseMideelewares(middleware ...ResponseHandleFunc) {
 	e.responseHandlers = append(e.responseHandlers, middleware...)
+}
+
+// SetMaxCrawlingDepth sets the max crawling depth. The engine will drop
+// Request with current depth exceeds the maximum limit.
+func (e *Engine) SetMaxCrawlingDepth(depth int) {
+	e.maxCrawlingDepth = depth
 }
 
 // RegisterSipders add working spiders
@@ -153,7 +160,9 @@ func (e *Engine) loadStartRequests() {
 		requests := spider.StartRequests()
 		for index := range requests {
 			e.lg.Infof("adding started reqeust from %s : %s", spider.Name(), requests[index].URL)
-			ok := e.sched.AddRequest(requests[index])
+			req := requests[index]
+			req.currentDepth = 1
+			ok := e.sched.AddRequest(req)
 			if !ok {
 				return
 			}
@@ -228,18 +237,19 @@ func (e *Engine) getNextRequest() (*Request, bool) {
 	return req, true
 }
 
-func (e *Engine) addRequests(reqs []*Request) {
+func (e *Engine) addRequests(ctx *Context, reqs []*Request) {
 	for index := range reqs {
 		req := reqs[index]
 		if req == nil {
 			continue
 		}
 
-		// TODO: limit request depth
-		// req.currentDepth = resp.request.currentDepth + 1
-		// if req.currentDepth >= 5 {
-		// 	continue
-		// }
+		req.currentDepth = ctx.Request().currentDepth + 1
+		if e.maxCrawlingDepth > 0 && req.currentDepth > e.maxCrawlingDepth {
+			// has exceeds max crawling depth, drop it !!!
+			e.lg.Debugf("exceeds max crawling depth [max=%v], drop request: %s", e.maxCrawlingDepth, req.URL)
+			continue
+		}
 
 		e.lg.Infof("adding new request [%s %s]", req.Method, req.URL)
 		if ok := e.sched.AddRequest(req); !ok {
@@ -313,7 +323,7 @@ func (e *Engine) handleResponse(spiders []Spider, resp *Response) {
 			// TODO:
 			// 1 - calculate request depth
 			// 2 - FIX IT: create a new goroutine everytime here, may cause too many blocked goroutine
-			go e.addRequests(newReqs)
+			go e.addRequests(ctx, newReqs)
 		})
 	}
 	wg.Wait()

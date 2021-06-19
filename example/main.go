@@ -20,6 +20,7 @@ func main() {
 
 	eng.RegisterSipders(NewBaiduSpider())      // register all spiders here
 	eng.RegisterPipelines(NewSimplePipeline()) // register all pipelines here
+	eng.SetMaxCrawlingDepth(3)
 
 	go eng.Start()
 
