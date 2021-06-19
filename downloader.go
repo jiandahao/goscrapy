@@ -51,7 +51,14 @@ func (dd *DefaultDownloader) SetHTTPClient(client *http.Client) {
 
 // Download sends http request and using goquery to get http document
 func (dd *DefaultDownloader) Download(req *Request) (*Response, error) {
-	r, err := dd.makeRequest(req)
+	ctx := context.Background()
+	if dd.opt.Timeout > 0 {
+		var cancle context.CancelFunc
+		ctx, cancle = context.WithTimeout(ctx, dd.opt.Timeout)
+		defer cancle()
+	}
+
+	r, err := dd.makeRequest(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -87,10 +94,7 @@ func (dd *DefaultDownloader) Download(req *Request) (*Response, error) {
 	}, nil
 }
 
-func (dd *DefaultDownloader) makeRequest(req *Request) (*http.Request, error) {
-	ctx, cancle := context.WithTimeout(context.Background(), dd.opt.Timeout)
-	defer cancle()
-
+func (dd *DefaultDownloader) makeRequest(ctx context.Context, req *Request) (*http.Request, error) {
 	r, err := http.NewRequestWithContext(ctx, req.Method, req.URL, nil)
 	if err != nil {
 		return nil, err
