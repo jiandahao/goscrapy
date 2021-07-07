@@ -18,9 +18,9 @@ type Request struct {
 	URL    string      `json:"url,omitempty"`
 	Header http.Header `json:"header,omitempty"`
 	Query  url.Values  `json:"query,omitempty"`
-	// using to decide scheduling sequence. It only means something when using a 
+	// using to decide scheduling sequence. It only means something when using a
 	// scheduler that schedules requests based on request weight.
-	Weight int         
+	Weight int
 
 	// private fields
 	currentDepth int  // current request depth

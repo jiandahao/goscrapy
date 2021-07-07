@@ -89,7 +89,7 @@ func (e *Engine) UseResponseMideelewares(middleware ...ResponseHandleFunc) {
 }
 
 // SetMaxCrawlingDepth sets the max crawling depth. The engine will drop
-// Request with current depth exceeds the maximum limit.
+// Requests that have current depth exceeded the maximum limit.
 func (e *Engine) SetMaxCrawlingDepth(depth int) {
 	e.maxCrawlingDepth = depth
 }
@@ -259,7 +259,7 @@ func (e *Engine) addRequests(ctx *Context, reqs []*Request) {
 }
 
 // requestProbe starts a loop to detect whether there is more unhandled request
-// in scheduler. Engine will stop if no more requests avaiable.
+// in scheduler. Engine will stop if no more requests available.
 func (e *Engine) requestProbe() {
 	for {
 		// if there is no more request in scheduler and the amount of
