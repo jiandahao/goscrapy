@@ -56,9 +56,11 @@ import (
 
 func main() {
 
-	eng := goscrapy.NewEngine()
-
-	eng.UseLogger(logger.NewSugaredLogger("engine", "debug"))
+	eng := goscrapy.New(
+		goscrapy.SetConcurrency(1),
+		goscrapy.UseLogger(logger.NewDefaultLogger("debug")),
+		goscrapy.MaxCrawlingDepth(3),
+	)
 
 	eng.RegisterSipders(/*add your own spiders here*/)
 	eng.RegisterPipelines(/*add your own pipelines here*/)

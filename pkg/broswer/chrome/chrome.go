@@ -53,7 +53,7 @@ func (b *Broswer) Open() error {
 	var err error
 
 	defer func() {
-		if err != nil {
+		if err == nil {
 			atomic.StoreInt32(&b.state, stateOpenned)
 		}
 	}()

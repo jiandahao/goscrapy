@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jiandahao/goscrapy/utils/broswer/chrome"
+	"github.com/jiandahao/goscrapy/pkg/broswer/chrome"
 )
 
 var chromedriverPath = flag.String("chromedriver", "/usr/local/chromedriver", "sepcified chromedriver installed path")
@@ -38,7 +38,9 @@ func main() {
 
 	time.Sleep(time.Second * 10)
 
-	broswer.Close()
+	if err := broswer.Close(); err != nil {
+		fmt.Printf("failed to close browser: %v", err)
+	}
 
 	for i := 0; i < 5; i++ {
 		broswer.Open()

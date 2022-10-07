@@ -1,7 +1,7 @@
 package goscrapy
 
 import (
-	"io"
+	"context"
 	"net/http"
 	"net/url"
 	"sync"
@@ -75,7 +75,7 @@ type Response struct {
 	// Document represents an HTML document to be manipulated.
 	Document *goquery.Document `json:"-"`
 	// Body represents the response body.
-	Body io.ReadCloser `json:"-"`
+	Body []byte `json:"-"`
 	// ContentLength records the length of the associated content. more details see http.Response.
 	ContentLength int64 `json:"content_length,omitempty"`
 	// Header represents response header, maps header keys to values.
@@ -84,6 +84,7 @@ type Response struct {
 
 // Context represents the scraping and crawling context
 type Context struct {
+	context.Context
 	response *Response
 }
 
