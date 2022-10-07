@@ -32,7 +32,8 @@ type Engine struct {
 
 	requestHandlers  []RequestHandleFunc
 	responseHandlers []ResponseHandleFunc
-	maxCrawlingDepth int // max crawling depth, no limit if less or equals to 0
+	maxCrawlingDepth int           // max crawling depth, no limit if less or equals to 0
+	delay            time.Duration // delay is the duration to wait before handling next request
 }
 
 // New create a new goscrapy engine
@@ -83,6 +84,13 @@ func UseDownloader(d Downloader) Option {
 func UseScheduler(s Scheduler) Option {
 	return func(e *Engine) {
 		e.sched = s
+	}
+}
+
+// WithDelay set the duration to wait before handling next request.
+func WithDelay(delay time.Duration) Option {
+	return func(e *Engine) {
+		e.delay = delay
 	}
 }
 
@@ -233,7 +241,7 @@ func (e *Engine) requestHandler() {
 
 		e.handleResponse(ctx, spiders, resp)
 
-		time.Sleep(10 * time.Second)
+		time.Sleep(e.delay)
 	}
 }
 
