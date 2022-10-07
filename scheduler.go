@@ -9,16 +9,18 @@ import (
 
 // Scheduler scheduler is responsible for managing all scraping and crawling request
 type Scheduler interface {
-	Start() error                              // start scheduler
-	Stop() error                               // stop scheduler
-	NextRequest() (req *Request, hasMore bool) // return next request from scheduler
-	AddRequest(req *Request) (ok bool)         // add new request into scheduler
-	HasMore() bool                             // returns true if there are more request to be scheduled
+	Start() error                             // start scheduler
+	Stop() error                              // stop scheduler
+	PopRequest() (req *Request, hasMore bool) // return next request from scheduler
+	PushRequest(req *Request) (ok bool)       // add new request into scheduler
+	HasMore() bool                            // returns true if there are more request to be scheduled
 }
+
+var _ Scheduler = &FIFOScheduler{}
 
 // FIFOScheduler default scheduler implementation
 type FIFOScheduler struct {
-	queue channel.Channel
+	queue *channel.SafeChannel
 }
 
 // NewFIFOScheduler create a new fifo scheduler with queue size of 100
@@ -39,13 +41,13 @@ func (ds *FIFOScheduler) Stop() error {
 	return nil
 }
 
-// AddRequest add request
-func (ds *FIFOScheduler) AddRequest(req *Request) (ok bool) {
+// PushRequest add request
+func (ds *FIFOScheduler) PushRequest(req *Request) (ok bool) {
 	return ds.queue.Push(req)
 }
 
-// NextRequest returns next request
-func (ds *FIFOScheduler) NextRequest() (req *Request, hadMore bool) {
+// PopRequest returns next request
+func (ds *FIFOScheduler) PopRequest() (req *Request, hadMore bool) {
 	val, ok := ds.queue.Pop()
 	if !ok {
 		return nil, false
@@ -59,18 +61,20 @@ func (ds *FIFOScheduler) HasMore() bool {
 	return ds.queue.Count() > 0
 }
 
+var _ Scheduler = &WeightedScheduler{}
+
 // WeightedScheduler scheduler
 type WeightedScheduler struct {
-	data []Request
+	data []*Request
 	mux  sync.RWMutex
-	c    chan Request
+	c    chan *Request
 }
 
 // NewWeightedScheduler new a weighted scheduler which is implemented
 // based on max-heap.
 func NewWeightedScheduler() *WeightedScheduler {
 	return &WeightedScheduler{
-		c: make(chan Request, 500),
+		c: make(chan *Request, 500),
 	}
 }
 
@@ -92,7 +96,7 @@ func (sched *WeightedScheduler) Stop() error {
 }
 
 // PushRequest push request
-func (sched *WeightedScheduler) PushRequest(req Request) (ok bool) {
+func (sched *WeightedScheduler) PushRequest(req *Request) (ok bool) {
 	sched.c <- req
 	return true
 }
@@ -107,8 +111,8 @@ func (sched *WeightedScheduler) PopRequest() (req *Request, ok bool) {
 	}
 
 	val := heap.Pop(sched)
-	res, ok := val.(Request)
-	return &res, true
+	res, ok := val.(*Request)
+	return res, true
 }
 
 // HasMore returns true if queue has more request
@@ -138,7 +142,7 @@ func (sched *WeightedScheduler) Swap(i, j int) {
 // Push pushes value onto heap, it's aimed to implement sort.Interface.
 // For pushing request onto schduler using PushRequest instead.
 func (sched *WeightedScheduler) Push(x interface{}) {
-	sched.data = append(sched.data, x.(Request))
+	sched.data = append(sched.data, x.(*Request))
 }
 
 // Pop remove and return element Len() - 1. It's aimed to implement sort.Interface.

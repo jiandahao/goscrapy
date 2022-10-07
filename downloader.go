@@ -3,45 +3,24 @@ package goscrapy
 import (
 	"bytes"
 	"context"
-	"io/ioutil"
+	"io"
 	"net/http"
-	"time"
 
 	"github.com/PuerkitoBio/goquery"
 )
 
-// DownloadOption downloader options
-type DownloadOption struct {
-	// Timeout controls the entire lifetime of a request and its response:
-	// obtaining a connection, sending the request, and reading
-	// the response headers and body
-	Timeout time.Duration
-	// HTTPClient is the client that sends an HTTP request. If you wanna add
-	// proxy, implementing it in http.Transport
-	HTTPClient *http.Client
-}
+var defaultHTTPClient = &http.Client{}
 
 // Downloader is an interface that representing the ability to download
 // data from internet. It is responsible for fetching web pages, the downloading
 // response will be took over by engine, in turn, fed to spiders.
 type Downloader interface {
-	Init(option DownloadOption)
 	Download(*Request) (*Response, error)
 }
 
 // DefaultDownloader a simple downloader implementation
 type DefaultDownloader struct {
-	opt        DownloadOption
 	httpClient *http.Client
-}
-
-// Init init default downloader
-func (dd *DefaultDownloader) Init(opt DownloadOption) {
-	dd.opt = opt
-	dd.httpClient = &http.Client{}
-	if opt.HTTPClient != nil {
-		dd.httpClient = opt.HTTPClient
-	}
 }
 
 // SetHTTPClient set http client using to fetch pages
@@ -52,36 +31,33 @@ func (dd *DefaultDownloader) SetHTTPClient(client *http.Client) {
 // Download sends http request and using goquery to get http document
 func (dd *DefaultDownloader) Download(req *Request) (*Response, error) {
 	ctx := context.Background()
-	if dd.opt.Timeout > 0 {
-		var cancle context.CancelFunc
-		ctx, cancle = context.WithTimeout(ctx, dd.opt.Timeout)
-		defer cancle()
-	}
 
 	r, err := dd.makeRequest(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := dd.httpClient.Do(r)
+	httpClient := dd.httpClient
+	if httpClient == nil {
+		httpClient = defaultHTTPClient
+	}
+
+	resp, err := httpClient.Do(r)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	buf := &bytes.Buffer{}
-	if resp.ContentLength >= 0 {
-		data := make([]byte, 0, resp.ContentLength+512)
-		buf = bytes.NewBuffer(data)
-	}
-
-	_, err = buf.ReadFrom(resp.Body)
-	if err != nil {
+	data := make([]byte, 0, resp.ContentLength+512)
+	buf := bytes.NewBuffer(data)
+	if _, err := io.Copy(buf, resp.Body); err != nil {
 		return nil, err
 	}
 
-	body := ioutil.NopCloser(buf)
-	doc, _ := goquery.NewDocumentFromReader(bytes.NewBuffer(buf.Bytes()))
+	doc, err := goquery.NewDocumentFromReader(bytes.NewBuffer(buf.Bytes()))
+	if err != nil {
+		return nil, err
+	}
 
 	return &Response{
 		Status:        resp.Status,
@@ -89,7 +65,7 @@ func (dd *DefaultDownloader) Download(req *Request) (*Response, error) {
 		ContentLength: resp.ContentLength,
 		Request:       req,
 		Document:      doc,
-		Body:          body,
+		Body:          buf.Bytes(),
 		Header:        resp.Header,
 	}, nil
 }

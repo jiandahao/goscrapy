@@ -14,13 +14,14 @@ import (
 
 func main() {
 
-	eng := goscrapy.NewEngine()
-
-	eng.UseLogger(logger.NewSugaredLogger("engine", "debug"))
+	eng := goscrapy.New(
+		goscrapy.SetConcurrency(1),
+		goscrapy.UseLogger(logger.NewDefaultLogger("debug")),
+		goscrapy.MaxCrawlingDepth(3),
+	)
 
 	eng.RegisterSipders(NewBaiduSpider())      // register all spiders here
 	eng.RegisterPipelines(NewSimplePipeline()) // register all pipelines here
-	eng.SetMaxCrawlingDepth(3)
 
 	go eng.Start()
 

@@ -56,9 +56,11 @@ import (
 
 func main() {
 
-	eng := goscrapy.NewEngine()
-
-	eng.UseLogger(logger.NewSugaredLogger("engine", "debug"))
+	eng := goscrapy.New(
+		goscrapy.SetConcurrency(1),
+		goscrapy.UseLogger(logger.NewDefaultLogger("debug")),
+		goscrapy.MaxCrawlingDepth(3),
+	)
 
 	eng.RegisterSipders(/*add your own spiders here*/)
 	eng.RegisterPipelines(/*add your own pipelines here*/)
@@ -173,7 +175,7 @@ func CreateSpiderCommand() cli.Command {
 		},
 		Action: func(ctx *cli.Context) error {
 			output := ctx.String("o")
-			spiderName := ctx.String("n")
+			spiderName := strings.Title(ctx.String("n"))
 			pkgName := ctx.String("pkg")
 
 			if !strings.HasSuffix(output, ".go") {
@@ -264,7 +266,7 @@ func CreatePipelineCommand() cli.Command {
 		},
 		Action: func(ctx *cli.Context) error {
 			output := ctx.String("o")
-			name := ctx.String("n")
+			name := strings.Title(ctx.String("n"))
 			pkgName := ctx.String("pkg")
 			itemList := ctx.StringSlice("item")
 

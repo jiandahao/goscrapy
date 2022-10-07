@@ -1,11 +1,13 @@
 package goscrapy
 
 import (
+	"context"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	uuid "github.com/hashicorp/go-uuid"
 	"github.com/jiandahao/goutils/logger"
 	"github.com/jiandahao/goutils/waitgroup"
 )
@@ -30,40 +32,69 @@ type Engine struct {
 
 	requestHandlers  []RequestHandleFunc
 	responseHandlers []ResponseHandleFunc
-	maxCrawlingDepth int // max crawling depth, no limit if less or equals to 0
+	maxCrawlingDepth int           // max crawling depth, no limit if less or equals to 0
+	delay            time.Duration // delay is the duration to wait before handling next request
 }
 
-// NewEngine create a new goscrapy engine
-func NewEngine() *Engine {
-	downloader := &DefaultDownloader{}
-	downloader.Init(DownloadOption{
-		Timeout: time.Second,
-	})
-	return &Engine{
+// New create a new goscrapy engine
+func New(opts ...Option) *Engine {
+	e := &Engine{
 		sched:       NewFIFOScheduler(), // using a fifo scheduler by default
-		downloader:  downloader,
+		downloader:  &DefaultDownloader{},
 		concurrency: 1,
-		lg:          logger.NewSugaredLogger("engine", "info"),
+		lg:          logger.NewDefaultLogger("info"),
 		pipelines:   make(map[string][]Pipeline),
+	}
+
+	for _, opt := range opts {
+		opt(e)
+	}
+
+	return e
+}
+
+// Option engine option
+type Option func(e *Engine)
+
+// SetConcurrency set concurrency
+func SetConcurrency(num int) Option {
+	return func(e *Engine) {
+		if num <= 0 {
+			return
+		}
+		e.concurrency = num
 	}
 }
 
-// UseScheduler sets scheduler
-func (e *Engine) UseScheduler(sched Scheduler) {
-	e.sched = sched
+// UseLogger set logger
+func UseLogger(lg logger.Logger) Option {
+	return func(e *Engine) {
+		e.lg = lg
+	}
 }
 
-// UseDownloader sets downloader
-func (e *Engine) UseDownloader(down Downloader) {
-	e.downloader = down
+// UseDownloader set downloader
+func UseDownloader(d Downloader) Option {
+	return func(e *Engine) {
+		e.downloader = d
+	}
 }
 
-// UseLogger sets logger
-func (e *Engine) UseLogger(lg logger.Logger) {
-	e.lg = lg
+// UseScheduler set scheduler
+func UseScheduler(s Scheduler) Option {
+	return func(e *Engine) {
+		e.sched = s
+	}
 }
 
-// UseRequestMiddlewares registers request middlewares. Requests will be processed
+// WithDelay set the duration to wait before handling next request.
+func WithDelay(delay time.Duration) Option {
+	return func(e *Engine) {
+		e.delay = delay
+	}
+}
+
+// WithRequestMiddlewares registers request middlewares. Requests will be processed
 // by request middlewares just before passing to downloader.
 //
 // for aborting request in middleware, using Request.Abrot()
@@ -77,21 +108,27 @@ func ReqMiddleware(req *goscrapy.Request) error {
 	return nil
 }
 */
-func (e *Engine) UseRequestMiddlewares(middleware ...RequestHandleFunc) {
-	e.requestHandlers = append(e.requestHandlers, middleware...)
+func WithRequestMiddlewares(middlewares ...RequestHandleFunc) Option {
+	return func(e *Engine) {
+		e.requestHandlers = append(e.requestHandlers, middlewares...)
+	}
 }
 
-// UseResponseMideelewares registers response middlewares. Response will be processed by
+// WithResponseMiddlewares registers response middlewares. Response will be processed by
 // response middlewares right after downloader finishes downloading and takes over
 // response to engine
-func (e *Engine) UseResponseMideelewares(middleware ...ResponseHandleFunc) {
-	e.responseHandlers = append(e.responseHandlers, middleware...)
+func WithResponseMiddlewares(middlewares ...ResponseHandleFunc) Option {
+	return func(e *Engine) {
+		e.responseHandlers = append(e.responseHandlers, middlewares...)
+	}
 }
 
-// SetMaxCrawlingDepth sets the max crawling depth. The engine will drop
+// MaxCrawlingDepth returns an Option that sets the max crawling depth. The engine will drop
 // Requests that have current depth exceeded the maximum limit.
-func (e *Engine) SetMaxCrawlingDepth(depth int) {
-	e.maxCrawlingDepth = depth
+func MaxCrawlingDepth(depth int) Option {
+	return func(e *Engine) {
+		e.maxCrawlingDepth = depth
+	}
 }
 
 // RegisterSipders add working spiders
@@ -104,7 +141,7 @@ func (e *Engine) RegisterSipders(spiders ...Spider) {
 		if s == nil {
 			continue
 		}
-		e.lg.Infof("loading spider [%s]", s.Name())
+		e.lg.Infof(context.Background(), "loading spider [%s]", s.Name())
 		e.spiders = append(e.spiders, s)
 	}
 }
@@ -126,14 +163,15 @@ func (e *Engine) RegisterPipelines(pipelines ...Pipeline) {
 
 // Start starts engine
 func (e *Engine) Start() {
+	ctx := context.Background()
 	if e.state == stateRunning {
-		e.lg.Info("engine already running")
+		e.lg.Infof(ctx, "engine already running")
 		return
 	}
 
 	e.state = stateRunning
 
-	e.lg.Info("start engine ...")
+	e.lg.Infof(ctx, "start engine ...")
 	e.sched.Start()
 
 	wg := waitgroup.Wrapper{}
@@ -159,10 +197,10 @@ func (e *Engine) loadStartRequests() {
 		spider := e.spiders[index]
 		requests := spider.StartRequests()
 		for index := range requests {
-			e.lg.Infof("adding started reqeust from %s : %s", spider.Name(), requests[index].URL)
+			e.lg.Infof(context.Background(), "adding started reqeust from %s : %s", spider.Name(), requests[index].URL)
 			req := requests[index]
 			req.currentDepth = 1
-			ok := e.sched.AddRequest(req)
+			ok := e.sched.PushRequest(req)
 			if !ok {
 				return
 			}
@@ -177,15 +215,21 @@ func (e *Engine) requestHandler() {
 			return
 		}
 
+		requestID, _ := uuid.GenerateUUID()
+		ctx := logger.AppendMetadata(
+			context.Background(),
+			logger.NewMetadata().Append("request_id", requestID),
+		)
+
 		spiders := e.getRelativeSpider(req.URL)
 		if len(spiders) <= 0 {
-			e.lg.Warnf("no spider found to handle request: %s", req.URL)
+			e.lg.Warnf(ctx, "no spider found to handle request: %s", req.URL)
 			continue
 		}
 
-		resp, err := e.handleRequest(req)
+		resp, err := e.handleRequest(ctx, req)
 		if err != nil {
-			e.lg.Errorf("<%s %s>  %v", req.Method, req.URL, err)
+			e.lg.Errorf(ctx, "<%s %s>  %v", req.Method, req.URL, err)
 			continue
 		}
 
@@ -193,11 +237,11 @@ func (e *Engine) requestHandler() {
 			continue
 		}
 
-		e.lg.Infof("<%s %s %s>", req.Method, req.URL, resp.Status)
+		e.lg.Infof(ctx, "<%s %s %s>", req.Method, req.URL, resp.Status)
 
-		e.handleResponse(spiders, resp)
+		e.handleResponse(ctx, spiders, resp)
 
-		time.Sleep(time.Second)
+		time.Sleep(e.delay)
 	}
 }
 
@@ -222,7 +266,7 @@ func (e *Engine) getNextRequest() (*Request, bool) {
 	atomic.AddInt32(&e.pendingCnt, 1)
 
 	for req == nil {
-		req, hasMore = e.sched.NextRequest()
+		req, hasMore = e.sched.PopRequest()
 		if !hasMore {
 			return nil, false
 		}
@@ -247,12 +291,12 @@ func (e *Engine) addRequests(ctx *Context, reqs []*Request) {
 		req.currentDepth = ctx.Request().currentDepth + 1
 		if e.maxCrawlingDepth > 0 && req.currentDepth > e.maxCrawlingDepth {
 			// has exceeds max crawling depth, drop it !!!
-			e.lg.Debugf("exceeds max crawling depth [max=%v], drop request: %s", e.maxCrawlingDepth, req.URL)
+			e.lg.Debugf(ctx, "exceeds max crawling depth [max=%v], drop request: %s", e.maxCrawlingDepth, req.URL)
 			continue
 		}
 
-		e.lg.Infof("adding new request [%s %s]", req.Method, req.URL)
-		if ok := e.sched.AddRequest(req); !ok {
+		e.lg.Infof(ctx, "adding new request [%s %s]", req.Method, req.URL)
+		if ok := e.sched.PushRequest(req); !ok {
 			return
 		}
 	}
@@ -277,7 +321,7 @@ func (e *Engine) requestProbe() {
 	}
 }
 
-func (e *Engine) handleRequest(req *Request) (*Response, error) {
+func (e *Engine) handleRequest(ctx context.Context, req *Request) (*Response, error) {
 	// handle request using middlewares before passing to downloader
 	for _, fn := range e.requestHandlers {
 		err := fn(req)
@@ -293,12 +337,12 @@ func (e *Engine) handleRequest(req *Request) (*Response, error) {
 	return e.downloader.Download(req)
 }
 
-func (e *Engine) handleResponse(spiders []Spider, resp *Response) {
+func (e *Engine) handleResponse(ctx context.Context, spiders []Spider, resp *Response) {
 	// handle response using middleware before passing to spider
 	for _, fn := range e.responseHandlers {
 		err := fn(resp)
 		if err != nil {
-			e.lg.Errorf("handle response failure in middleware, %v", err)
+			e.lg.Errorf(ctx, "handle response failure in middleware, %v", err)
 			return
 		}
 	}
@@ -307,36 +351,37 @@ func (e *Engine) handleResponse(spiders []Spider, resp *Response) {
 	for index := range spiders {
 		spider := spiders[index]
 		wg.RecoverableWrap(func() {
-			ctx := &Context{
+			sctx := &Context{
+				Context:  ctx,
 				response: resp,
 			}
 
-			items, newReqs, err := spider.Parse(ctx)
+			items, newReqs, err := spider.Parse(sctx)
 			if err != nil {
-				e.lg.Errorf("spider [%s] failed to parse result, %v", spider.Name(), err)
+				e.lg.Errorf(ctx, "spider [%s] failed to parse result, %v", spider.Name(), err)
 				return
 			}
 
 			// passing items to all associated pipelines
-			e.handleItems(items)
+			e.handleItems(sctx, items)
 
 			// TODO:
 			// 1 - calculate request depth
 			// 2 - FIX IT: create a new goroutine everytime here, may cause too many blocked goroutine
-			go e.addRequests(ctx, newReqs)
+			go e.addRequests(sctx, newReqs)
 		})
 	}
 	wg.Wait()
 }
 
-func (e *Engine) handleItems(items *Items) {
+func (e *Engine) handleItems(ctx context.Context, items *Items) {
 	if items == nil || items.Name() == "" {
 		return
 	}
 
 	pipelines, ok := e.pipelines[items.Name()]
 	if !ok {
-		e.lg.Warnf("no pipeline associate with items: %s", items.Name())
+		e.lg.Warnf(ctx, "no pipeline associate with items: %s", items.Name())
 		return
 	}
 
@@ -349,7 +394,7 @@ func (e *Engine) handleItems(items *Items) {
 		wg.Wrap(func() {
 			err := p.Handle(items)
 			if err != nil {
-				e.lg.Errorf("pipeline [%s] error: %s", p.Name(), err)
+				e.lg.Errorf(ctx, "pipeline [%s] error: %s", p.Name(), err)
 			}
 		})
 	}
@@ -364,6 +409,6 @@ func (e *Engine) Stop() {
 	}
 
 	e.state = stateStoped
-	e.lg.Info("stop engine...")
+	e.lg.Infof(context.Background(), "stop engine...")
 	e.sched.Stop()
 }
