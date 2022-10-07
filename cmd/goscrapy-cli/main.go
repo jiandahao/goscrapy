@@ -175,7 +175,7 @@ func CreateSpiderCommand() cli.Command {
 		},
 		Action: func(ctx *cli.Context) error {
 			output := ctx.String("o")
-			spiderName := ctx.String("n")
+			spiderName := strings.Title(ctx.String("n"))
 			pkgName := ctx.String("pkg")
 
 			if !strings.HasSuffix(output, ".go") {
@@ -266,7 +266,7 @@ func CreatePipelineCommand() cli.Command {
 		},
 		Action: func(ctx *cli.Context) error {
 			output := ctx.String("o")
-			name := ctx.String("n")
+			name := strings.Title(ctx.String("n"))
 			pkgName := ctx.String("pkg")
 			itemList := ctx.StringSlice("item")
 
